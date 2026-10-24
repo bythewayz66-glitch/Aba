@@ -3,8 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { World, WATER_LEVEL } from './world.js';
-import { makeSoldier, makeFox, makeHorse, makeKnight, makeMount, playState, updateMixers } from './assets.js';
+import { World, WATER_LEVEL, WORLD_BOUND } from './world.js';
+import { makeSoldier, makeFox, makeHorse, makeKnight, makeMount, disposeObject, playState, updateMixers } from './assets.js';
 import { AudioEngine } from './audio.js';
 import { clamp, damp, seedFromString } from './util.js';
 import {
@@ -193,11 +193,12 @@ export class Game {
       const def = HEROES[key];
       const root = new THREE.Group();
       const model = makeSoldier({ body: def.tint, accent: def.accent, glow: 1.6, metalness: 0.5, roughness: 0.42 });
+      model.rotation.y = Math.PI;
       root.add(model);
       const st = this.stats(key);
       const pos = (this.savedPos && key === this.heroKey) ? this.savedPos : spawn[i];
       const hero = {
-        key, def, root, model, x: pos.x, z: pos.z, y: this.world.heightAt(pos.x, pos.z), yaw: Math.PI,
+        key, def, root, model, x: pos.x, z: pos.z, y: this.world.heightAt(pos.x, pos.z), yaw: 0,
         hp: st.maxHp, maxHp: st.maxHp, power: st.power, owner: key === this.heroKey ? 'local' : 'ai',
         moving: false, dead: false, cooldowns: {}, attackAnim: 0, invuln: 0, mounted: false, level: this.level,
         shield: 0, revive: 0, targetX: null, targetZ: null, gear: null, petType: key === this.heroKey ? this.activePet : null
@@ -206,6 +207,7 @@ export class Game {
       root.rotation.y = hero.yaw;
       this.scene.add(root);
       const mount = makeMount(MOUNTS[this.mount].model);
+      mount.rotation.y = this.mount === 'scooter' ? Math.PI : Math.PI / 2;
       mount.visible = false; root.add(mount); hero.mount = mount;
       const label = this.makeLabel(def.first, key === this.heroKey ? '#ffe7aa' : '#e3edf1');
       label.position.y = 2.55; root.add(label); hero.label = label;
@@ -213,7 +215,8 @@ export class Game {
       if (key === this.heroKey) this.localHero = hero;
     });
     if (this.savedPos) {
-      this.localHero.x = this.savedPos.x; this.localHero.z = this.savedPos.z;
+      this.localHero.x = clamp(this.savedPos.x, -WORLD_BOUND + 0.6, WORLD_BOUND - 0.6);
+      this.localHero.z = clamp(this.savedPos.z, -WORLD_BOUND + 0.6, WORLD_BOUND - 0.6);
       this.localHero.y = this.world.heightAt(this.localHero.x, this.localHero.z);
       this.localHero.root.position.set(this.localHero.x, this.localHero.y, this.localHero.z);
     }
@@ -284,6 +287,7 @@ export class Game {
     else if (def.kind === 'fox') model = makeFox({ body: def.tint || '#5f6872' });
     else if (def.kind === 'horse') model = makeHorse({ body: def.tint, accent: '#b8d8cf' });
     else model = makeKnight({ body: def.tint, accent: def.accent || '#7befe4', glow: 2.2 });
+    model.rotation.y = Math.PI;
     if (def.scale) model.scale.multiplyScalar(def.scale);
     root.add(model);
     const bar = this.makeBar(boss ? '#f0b35e' : '#7de39a');
@@ -336,7 +340,7 @@ export class Game {
     } else if (msg.type === 'input') {
       const h = this.heroes[msg.heroKey];
       if (!h || h.owner !== msg.from) return;
-      h.x = clamp(msg.x, -145, 145); h.z = clamp(msg.z, -145, 145); h.y = this.world.heightAt(h.x, h.z);
+      h.x = clamp(msg.x, -WORLD_BOUND + 0.6, WORLD_BOUND - 0.6); h.z = clamp(msg.z, -WORLD_BOUND + 0.6, WORLD_BOUND - 0.6); h.y = this.world.heightAt(h.x, h.z);
       h.yaw = msg.yaw; h.moving = !!msg.moving; h.mounted = !!msg.mounted; h.hp = Math.min(msg.hp, msg.maxHp); h.maxHp = msg.maxHp;
       h.petType = msg.petType; h.root.position.set(h.x, h.y, h.z); h.root.rotation.y = h.yaw;
       h.mount.visible = h.mounted;
@@ -493,33 +497,107 @@ export class Game {
     });
     $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); this.closeChat(); } e.stopPropagation(); });
     this.bindMobile();
+    this.bindHudControls();
     if (innerWidth < 860) $('mobile-controls').hidden = false;
   }
 
-  bindMobile() {
-    const joy = $('joystick'), stick = $('stick'); let active = false;
-    const move = (e) => {
-      if (!active) return;
-      const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let x = (e.clientX - cx) / (r.width * 0.5), y = (e.clientY - cy) / (r.height * 0.5);
-      let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; l = 1; }
-      const dead = 0.14;
-      if (l < dead) { x = 0; y = 0; }
-      else {
-        const strength = Math.pow((l - dead) / (1 - dead), 1.65);
-        x = (x / l) * strength; y = (y / l) * strength;
-      }
-      this.touch.x = x; this.touch.y = y;
-      stick.style.transform = `translate(${x * 26}px,${y * 26}px)`;
+  bindHudControls() {
+    const hud = $('hud');
+    if (!hud) return;
+    const key = 'aba-hud-layout-v1';
+    const mobile = matchMedia('(max-width: 720px)').matches;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch { /* storage can be unavailable */ }
+    const state = {
+      tools: saved.tools ?? !mobile,
+      quest: saved.quest ?? !mobile,
+      map: saved.map ?? !mobile,
+      hotbar: saved.hotbar ?? !mobile,
+      focus: saved.focus ?? false
     };
-    joy?.addEventListener('pointerdown', (e) => { active = true; joy.setPointerCapture(e.pointerId); move(e); });
-    joy?.addEventListener('pointermove', move);
-    const end = () => { active = false; this.touch.x = this.touch.y = 0; if (stick) stick.style.transform = ''; };
-    joy?.addEventListener('pointerup', end); joy?.addEventListener('pointercancel', end);
+    const save = () => { try { localStorage.setItem(key, JSON.stringify(state)); } catch { /* storage can be unavailable */ } };
+    const apply = () => {
+      hud.classList.toggle('hud-tools-open', !!state.tools);
+      hud.classList.toggle('quest-open', !!state.quest);
+      hud.classList.toggle('map-open', !!state.map);
+      hud.classList.toggle('hotbar-open', !!state.hotbar);
+      hud.classList.toggle('focus-mode', !!state.focus);
+      const tools = $('hud-tools-toggle');
+      if (tools) { tools.textContent = state.tools ? 'Less' : 'More'; tools.setAttribute('aria-expanded', String(!!state.tools)); }
+      const quest = $('quest-toggle');
+      if (quest) { quest.textContent = state.quest ? 'Less' : 'More'; quest.setAttribute('aria-expanded', String(!!state.quest)); }
+      const map = $('minimap-toggle');
+      if (map) { map.textContent = state.map ? 'Hide' : 'Show'; map.setAttribute('aria-expanded', String(!!state.map)); }
+      const hotbar = $('mob-hotbar');
+      if (hotbar) hotbar.classList.toggle('active', !!state.hotbar);
+      const focus = $('hud-focus');
+      if (focus) { focus.textContent = state.focus ? 'Exit' : 'Focus'; focus.setAttribute('aria-pressed', String(!!state.focus)); }
+    };
+    const toggle = (name) => { state[name] = !state[name]; save(); apply(); };
+    $('hud-tools-toggle')?.addEventListener('click', (e) => { e.preventDefault(); toggle('tools'); });
+    $('quest-toggle')?.addEventListener('click', (e) => { e.preventDefault(); toggle('quest'); });
+    $('minimap-toggle')?.addEventListener('click', (e) => { e.preventDefault(); toggle('map'); });
+    $('hud-focus')?.addEventListener('click', (e) => { e.preventDefault(); toggle('focus'); });
+    $('mob-hotbar')?.addEventListener('click', (e) => { e.preventDefault(); toggle('hotbar'); });
+    apply();
+  }
+
+  bindMobile() {
+    const joy = $('joystick'), stick = $('stick');
+    if (!joy || !stick) return;
+    let active = false;
+    let pointerId = null;
+    const apply = (clientX, clientY) => {
+      const r = joy.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const radius = Math.max(28, r.width * 0.4);
+      let x = (clientX - cx) / radius, y = (clientY - cy) / radius;
+      let len = Math.hypot(x, y);
+      if (len > 1) { x /= len; y /= len; len = 1; }
+      const dead = 0.14;
+      if (len < dead) { x = 0; y = 0; }
+      else {
+        const strength = Math.pow((len - dead) / (1 - dead), 1.3);
+        x = (x / len) * strength;
+        y = (y / len) * strength;
+      }
+      this.touch.x = x;
+      this.touch.y = y;
+      stick.style.transform = `translate(${x * 23}px,${y * 23}px)`;
+    };
+    const start = (e) => {
+      if (active) return;
+      active = true;
+      pointerId = e.pointerId;
+      e.preventDefault();
+      joy.classList.add('active');
+      try { joy.setPointerCapture(e.pointerId); } catch { /* pointer capture is optional */ }
+      apply(e.clientX, e.clientY);
+    };
+    const move = (e) => {
+      if (!active || (pointerId !== null && e.pointerId !== pointerId)) return;
+      e.preventDefault();
+      apply(e.clientX, e.clientY);
+    };
+    const end = (e) => {
+      if (!active || (pointerId !== null && e.pointerId !== pointerId)) return;
+      active = false;
+      pointerId = null;
+      this.touch.x = this.touch.y = 0;
+      this.touchSmooth.x = this.touchSmooth.z = 0;
+      joy.classList.remove('active');
+      stick.style.transform = '';
+    };
+    joy.addEventListener('pointerdown', start);
+    addEventListener('pointermove', move, { passive: false });
+    addEventListener('pointerup', end);
+    addEventListener('pointercancel', end);
+    addEventListener('blur', end);
     const b = (id, fn) => { const el = $(id); if (el) el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); }); };
     b('mob-attack', () => this.userAttack()); b('mob-ability', () => this.useSkill(1));
+    b('mob-skill2', () => this.useSkill(2)); b('mob-ultimate', () => this.useSkill(3));
     b('mob-interact', () => this.interact()); b('mob-pet', () => this.usePetSkill());
-    b('mob-mount', () => this.toggleMount());
+    b('mob-mount', () => this.toggleMount()); b('mob-heal', () => this.useTonic());
   }
 
   resize() {
@@ -582,8 +660,8 @@ export class Game {
     let x = (this.keys.KeyD || this.keys.ArrowRight ? 1 : 0) - (this.keys.KeyA || this.keys.ArrowLeft ? 1 : 0);
     let z = (this.keys.KeyS || this.keys.ArrowDown ? 1 : 0) - (this.keys.KeyW || this.keys.ArrowUp ? 1 : 0);
     if (this.touch.x || this.touch.y) {
-      this.touchSmooth.x = damp(this.touchSmooth.x, this.touch.x, 14, dt);
-      this.touchSmooth.z = damp(this.touchSmooth.z, this.touch.y, 14, dt);
+      this.touchSmooth.x = damp(this.touchSmooth.x, this.touch.x, 11, dt);
+      this.touchSmooth.z = damp(this.touchSmooth.z, this.touch.y, 11, dt);
       x = this.touchSmooth.x; z = this.touchSmooth.z;
     } else {
       this.touchSmooth.x = damp(this.touchSmooth.x, 0, 18, dt);
@@ -593,7 +671,8 @@ export class Game {
     const st = this.stats();
     const sprint = (this.keys.ShiftLeft || this.keys.ShiftRight) && len > 0 && !this.mounted && this.stamina > 2;
     this.stamina = clamp(this.stamina + (sprint ? -30 : 18) * dt, 0, 100);
-    let speed = st.speed * (sprint ? 1.35 : 1) * (this.mounted ? MOUNTS[this.mount].speed : 1);
+    const onStick = Math.abs(this.touchSmooth.x) > 0.001 || Math.abs(this.touchSmooth.z) > 0.001;
+    let speed = st.speed * (sprint ? 1.35 : 1) * (this.mounted ? MOUNTS[this.mount].speed : 1) * (onStick ? 0.78 : 1);
     if (h.buff > 0) speed *= 1.25;
     const fx = -Math.sin(this.camYaw), fz = -Math.cos(this.camYaw), rx = Math.cos(this.camYaw), rz = -Math.sin(this.camYaw);
     const mx = (fx * -z + rx * x), mz = (fz * -z + rz * x);
@@ -611,7 +690,7 @@ export class Game {
     playState(h.model, h.moving ? 'Run' : 'Idle', sprint ? 1.3 : 1);
     updateMixers(h.model, dt);
     h.mount.visible = this.mounted;
-    h.mount.rotation.y = Math.sin(this.time * 3) * 0.02;
+    h.mount.rotation.y = (this.mount === 'scooter' ? Math.PI : Math.PI / 2) + Math.sin(this.time * 3) * 0.02;
     if (this.petMesh) {
       const targetX = h.x - Math.cos(h.yaw) * 1.7, targetZ = h.z + Math.sin(h.yaw) * 1.7;
       this.petPos.x = damp(this.petPos.x, targetX, 5, dt); this.petPos.z = damp(this.petPos.z, targetZ, 5, dt);
@@ -1233,6 +1312,11 @@ export class Game {
     $('gold-value').textContent = this.gold;
     $('potion-value').textContent = this.items.tonic || 0;
     $('level-label').textContent = `Lv ${this.level}`;
+    $('mobile-level').textContent = `Lv ${this.level}`;
+    const hpPct = clamp(h.hp / h.maxHp, 0, 1) * 100;
+    $('hp-fill').style.width = `${hpPct}%`;
+    $('hp-text').textContent = `${Math.max(0, Math.round(h.hp))}`;
+    $('mobile-hp-fill').style.width = `${hpPct}%`;
     $('xp-fill').style.width = `${clamp(this.xp / this.xpNext(), 0, 1) * 100}%`;
     $('stamina-fill').style.width = `${this.stamina}%`;
     const pet = this.pets[this.activePet]; const petDef = PETS[this.activePet];
@@ -1376,7 +1460,7 @@ export class Game {
   buy(id) {
     const it = ITEMS[id]; if (!it || !it.price) return;
     if (this.gold < it.price) return this.toast('Not enough gold.', 'warn');
-    if (it.type === 'mount') { if (this.ownedMounts.includes(it.mount)) return; this.ownedMounts.push(it.mount); this.mount = it.mount; this.toast(`${it.name} unlocked and equipped.`, 'loot'); }
+    if (it.type === 'mount') { if (this.ownedMounts.includes(it.mount)) return; this.ownedMounts.push(it.mount); this.mount = it.mount; this.refreshMounts(); this.toast(`${it.name} unlocked and equipped.`, 'loot'); }
     else { this.addItem(id, 1); if (it.type === 'outfit' || it.type === 'shoes' || it.type === 'trinket') this.equip(id); this.toast(`${it.name} purchased.`, 'loot'); }
     this.gold -= it.price;
     if (it.modern && this.quests.threads.state === 'active') this.completeQuest('threads');
@@ -1396,7 +1480,7 @@ export class Game {
       if (it.buff) { this.buff = 30; }
       this.toast(`Used ${it.name}.`, 'loot'); this.audio.coin(); this.renderInventory();
     } else if (['weapon', 'armor', 'outfit', 'shoes', 'trinket'].includes(it.type)) this.equip(id);
-    else if (it.type === 'mount') { if (this.ownedMounts.includes(it.mount)) { this.mount = it.mount; this.toast(`${it.name} equipped.`, 'loot'); } }
+    else if (it.type === 'mount') { if (this.ownedMounts.includes(it.mount)) { this.mount = it.mount; this.refreshMounts(); this.toast(`${it.name} equipped.`, 'loot'); } }
   }
 
   equip(id) {
@@ -1544,6 +1628,18 @@ export class Game {
   jump() {
     // Grounded jump is visual-only; keep movement responsive.
     this.localHero.root.position.y += 0.01;
+  }
+
+  refreshMounts() {
+    const baseYaw = this.mount === 'scooter' ? Math.PI : Math.PI / 2;
+    for (const h of Object.values(this.heroes)) {
+      if (h.mount) { h.root.remove(h.mount); disposeObject(h.mount); }
+      const mount = makeMount(MOUNTS[this.mount].model);
+      mount.rotation.y = baseYaw;
+      mount.visible = this.mounted;
+      h.root.add(mount);
+      h.mount = mount;
+    }
   }
 
   toggleMount() {

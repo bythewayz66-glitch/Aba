@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { HEROES, HERO_KEYS, ITEMS, RECIPES, PETS, ENEMIES, QUESTS } from '../src/data.js';
+import { heightAt, WORLD_BOUND } from '../src/world.js';
 
 let checks = 0;
 function ok(cond, message) {
@@ -33,14 +34,21 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 for (const id of [
   'game-canvas', 'hud', 'menu', 'inventory-overlay', 'skills-overlay', 'craft-overlay',
   'pets-overlay', 'map-overlay', 'fishing-overlay', 'coop-overlay', 'help-overlay',
-  'pause-overlay', 'dialog-overlay', 'shop-overlay', 'victory-overlay', 'toast-stack'
+  'pause-overlay', 'dialog-overlay', 'shop-overlay', 'victory-overlay', 'toast-stack',
+  'hp-fill', 'hp-text', 'mobile-level', 'mobile-hp-fill', 'hud-tools-toggle', 'quest-toggle',
+  'minimap-toggle', 'mob-skill2', 'mob-ultimate', 'mob-heal', 'mob-hotbar'
 ]) ok(html.includes(`id="${id}"`), `index contains #${id}`);
 
 const game = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
 for (const feature of [
   'save()', 'craft(', 'farm(', 'reel(', 'petSkill(', 'questProgress(', 'buy(', 'equip(',
-  'BroadcastChannel', 'renderInventory', 'renderSkills', 'renderPets', 'startFishing'
+  'BroadcastChannel', 'renderInventory', 'renderSkills', 'renderPets', 'startFishing', 'bindHudControls'
 ]) ok(game.includes(feature), `game implements ${feature}`);
+
+ok(WORLD_BOUND > 100 && WORLD_BOUND < 150, 'world boundary is inside the terrain edge');
+ok(heightAt(149, 0) > heightAt(130, 0) + 8, 'world edge rises into a mountain boundary');
+ok(game.includes('model.rotation.y = Math.PI'), 'character models are rotated to face movement direction');
+ok(game.includes('refreshMounts()'), 'equipped mounts can be rebuilt');
 
 for (const file of ['Soldier.glb', 'Fox.glb', 'Horse.glb', 'Knight.glb']) {
   const path = new URL(`../public/models/${file}`, import.meta.url);

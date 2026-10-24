@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0c1620">
   <title>Aurora Boris Alice — Open-World Co-op RPG</title>
   <meta name="description" content="Aurora Boris Alice is a browser-based medieval open-world RPG with modern mounts, modern streetwear, quests, and same-browser co-op.">
@@ -17,12 +17,22 @@
       <div class="hud-cluster hud-top-left">
         <div id="party-panel" class="panel party-panel"></div>
         <div class="panel resource-panel">
-          <span class="resource gold"><i></i><b id="gold-value">0</b><small>gold</small></span>
-          <span class="resource potion"><i></i><b id="potion-value">0</b><small>tonics</small></span>
-          <button id="btn-inventory" class="mini-btn" title="Inventory (I)">Pack <kbd>I</kbd></button>
-          <button id="btn-skills" class="mini-btn" title="Skills (K)">Skills <kbd>K</kbd></button>
-          <button id="btn-craft" class="mini-btn" title="Crafting (C)">Craft <kbd>C</kbd></button>
-          <button id="btn-pets" class="mini-btn" title="Pets (P)">Pets <kbd>P</kbd></button>
+          <div class="resource-main">
+            <span class="resource gold"><i></i><b id="gold-value">0</b><small>gold</small></span>
+            <span class="resource potion"><i></i><b id="potion-value">0</b><small>tonics</small></span>
+            <span class="status-level" id="mobile-level">Lv 1</span>
+          </div>
+          <div class="status-hp" aria-label="Health"><i id="mobile-hp-fill"></i></div>
+          <div class="resource-actions">
+            <button id="hud-tools-toggle" class="mini-btn hud-tools-toggle" type="button" aria-expanded="false" aria-controls="hud-tools">More</button>
+            <button id="hud-focus" class="mini-btn hud-focus" type="button" aria-pressed="false">Focus</button>
+          </div>
+          <div id="hud-tools" class="hud-tools">
+            <button id="btn-inventory" class="mini-btn" title="Inventory (I)">Pack <kbd>I</kbd></button>
+            <button id="btn-skills" class="mini-btn" title="Skills (K)">Skills <kbd>K</kbd></button>
+            <button id="btn-craft" class="mini-btn" title="Crafting (C)">Craft <kbd>C</kbd></button>
+            <button id="btn-pets" class="mini-btn" title="Pets (P)">Pets <kbd>P</kbd></button>
+          </div>
         </div>
         <div id="pet-mini" class="panel pet-mini">
           <span class="pet-orb"></span><div><b id="pet-mini-name">Ember</b><small id="pet-mini-lv">Fox · Lv 1</small></div><div class="pet-mini-hp"><i id="pet-mini-hp"></i></div>
@@ -32,9 +42,14 @@
       <div class="hud-cluster hud-top-center">
         <div id="quest-tracker" class="panel quest-tracker">
           <div class="quest-eyebrow"><span>Active quest</span><span id="quest-count"></span></div>
-          <div id="quest-title">A New Dawn</div>
-          <div id="quest-objective">Speak with Mayor Elowen in Emberfall.</div>
-          <div class="quest-footer"><span id="quest-distance">—</span><span id="quest-hint">Follow the gold diamond</span></div>
+          <div class="quest-title-row">
+            <div id="quest-title">A New Dawn</div>
+            <button id="quest-toggle" class="collapse-btn quest-toggle" type="button" aria-expanded="true" aria-label="Expand quest details">More</button>
+          </div>
+          <div class="quest-body">
+            <div id="quest-objective">Speak with Mayor Elowen in Emberfall.</div>
+            <div class="quest-footer"><span id="quest-distance">—</span><span id="quest-hint">Follow the gold diamond</span></div>
+          </div>
         </div>
         <div id="boss-bar" class="boss-bar" hidden>
           <div class="boss-label"><span id="boss-name">The Clockwork Dragon</span><span id="boss-hp-text"></span></div>
@@ -44,9 +59,11 @@
 
       <div class="hud-cluster hud-top-right">
         <div class="panel minimap-panel">
-          <div class="minimap-head"><span>Emberfall Valley</span><span id="room-badge">Solo</span></div>
-          <div class="minimap-shell"><canvas id="minimap-canvas" width="240" height="180"></canvas><div class="minimap-ring"></div></div>
-          <div class="minimap-foot"><span id="world-clock">08:20</span><span id="zone-name">Emberfall</span></div>
+          <div class="minimap-head"><span class="minimap-title">Emberfall Valley</span><span id="room-badge">Solo</span><button id="minimap-toggle" class="collapse-btn minimap-toggle" type="button" aria-expanded="true">Hide</button></div>
+          <div class="minimap-body">
+            <div class="minimap-shell"><canvas id="minimap-canvas" width="240" height="180"></canvas><div class="minimap-ring"></div></div>
+            <div class="minimap-foot"><span id="world-clock">08:20</span><span id="zone-name">Emberfall</span></div>
+          </div>
         </div>
         <div class="hud-buttons">
           <button id="btn-map" class="mini-btn" title="World map (M)">Map <kbd>M</kbd></button>
@@ -64,6 +81,7 @@
 
       <div class="hud-cluster hud-bottom">
         <div class="meters">
+          <div class="meter-row hp-row"><span>HP</span><div class="meter hp"><div id="hp-fill"></div></div><b id="hp-text">100</b></div>
           <div class="meter-row"><span>XP</span><div class="meter xp"><div id="xp-fill"></div></div><b id="level-label">Lv 1</b></div>
           <div class="meter-row"><span>Vigor</span><div class="meter stamina"><div id="stamina-fill"></div></div></div>
         </div>
@@ -99,11 +117,15 @@
       <div id="mobile-controls" class="mobile-controls">
         <div id="joystick" class="joystick"><div id="stick" class="stick"></div></div>
         <div class="mobile-actions">
-          <button id="mob-attack" class="mob-btn attack">ATK</button>
-          <button id="mob-ability" class="mob-btn ability">Q</button>
-          <button id="mob-interact" class="mob-btn interact">E</button>
-          <button id="mob-pet" class="mob-btn pet">G</button>
-          <button id="mob-mount" class="mob-btn mount">V</button>
+          <button id="mob-attack" class="mob-btn attack" type="button" aria-label="Attack">ATK</button>
+          <button id="mob-ability" class="mob-btn ability" type="button" aria-label="Skill one">Q</button>
+          <button id="mob-skill2" class="mob-btn ability" type="button" aria-label="Skill two">R</button>
+          <button id="mob-ultimate" class="mob-btn ultimate" type="button" aria-label="Ultimate">F</button>
+          <button id="mob-interact" class="mob-btn interact" type="button" aria-label="Interact">E</button>
+          <button id="mob-pet" class="mob-btn pet" type="button" aria-label="Pet skill">G</button>
+          <button id="mob-mount" class="mob-btn mount" type="button" aria-label="Mount or dismount">V</button>
+          <button id="mob-heal" class="mob-btn potion" type="button" aria-label="Drink tonic">H</button>
+          <button id="mob-hotbar" class="mob-btn hotbar-btn" type="button" aria-label="Toggle combat bar">SKL</button>
         </div>
       </div>
     </section>

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp, fbm, hash2, lerp, mulberry32, pointSegmentDistance } from './util.js';
 
 export const WORLD_SIZE = 300;
+export const WORLD_BOUND = 140;
 export const WATER_LEVEL = 1.15;
 
 const VILLAGE = { x: 0, z: 0, r: 42 };
@@ -52,6 +53,12 @@ export function heightAt(x, z, seed = 1337) {
 
   const road = roadDistance(x, z);
   if (road < 5) h = lerp(h, 4.25, smoothstep(5, 2.2, road) * 0.55);
+
+  const edge = Math.max(Math.abs(x), Math.abs(z));
+  if (edge > 138) {
+    const ridge = smoothstep(138, 150, edge);
+    h += ridge * ridge * (24 + fbm(x * 0.035, z * 0.035, seed + 91, 2) * 12);
+  }
 
   return Math.max(-1.5, h);
 }
@@ -654,7 +661,7 @@ export class World {
   }
 
   blocked(x, z, radius = 0.5) {
-    if (x < -WORLD_SIZE / 2 + radius || z < -WORLD_SIZE / 2 + radius || x > WORLD_SIZE / 2 - radius || z > WORLD_SIZE / 2 - radius) return true;
+    if (Math.abs(x) > WORLD_BOUND - radius || Math.abs(z) > WORLD_BOUND - radius) return true;
     if (this.heightAt(x, z) < WATER_LEVEL + 0.15) return true;
     const cell = 8;
     const cx = Math.floor(x / cell);
@@ -697,8 +704,8 @@ export class World {
     for (let i = 0; i < 24; i++) {
       const a = rand() * Math.PI * 2;
       const r = Math.sqrt(rand()) * zone.r;
-      const x = clamp(zone.x + Math.cos(a) * r, -145, 145);
-      const z = clamp(zone.z + Math.sin(a) * r, -145, 145);
+      const x = clamp(zone.x + Math.cos(a) * r, -WORLD_BOUND + 2, WORLD_BOUND - 2);
+      const z = clamp(zone.z + Math.sin(a) * r, -WORLD_BOUND + 2, WORLD_BOUND - 2);
       if (!this.blocked(x, z, 0.8)) return { x, z };
     }
     return { x: zone.x, z: zone.z };
