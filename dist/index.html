@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#0c1620">
+  <title>Aurora Boris Alice — Open-World Co-op RPG</title>
+  <meta name="description" content="Aurora Boris Alice is a browser-based medieval open-world RPG with modern mounts, modern streetwear, quests, and same-browser co-op.">
+  <link rel="icon" href="/assets/favicon-CMeB6bIj.svg" type="image/svg+xml">
+  <script type="module" crossorigin src="/assets/index-x8XYQxQp.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index--8xYtUDQ.css">
+</head>
+<body>
+  <main id="app">
+    <canvas id="game-canvas" aria-label="Game world"></canvas>
+
+    <section id="hud" hidden>
+      <div class="hud-cluster hud-top-left">
+        <div id="party-panel" class="panel party-panel"></div>
+        <div class="panel resource-panel">
+          <span class="resource gold"><i></i><b id="gold-value">0</b><small>gold</small></span>
+          <span class="resource potion"><i></i><b id="potion-value">0</b><small>tonics</small></span>
+          <button id="btn-inventory" class="mini-btn" title="Inventory (I)">Pack <kbd>I</kbd></button>
+          <button id="btn-skills" class="mini-btn" title="Skills (K)">Skills <kbd>K</kbd></button>
+          <button id="btn-craft" class="mini-btn" title="Crafting (C)">Craft <kbd>C</kbd></button>
+          <button id="btn-pets" class="mini-btn" title="Pets (P)">Pets <kbd>P</kbd></button>
+        </div>
+        <div id="pet-mini" class="panel pet-mini">
+          <span class="pet-orb"></span><div><b id="pet-mini-name">Ember</b><small id="pet-mini-lv">Fox · Lv 1</small></div><div class="pet-mini-hp"><i id="pet-mini-hp"></i></div>
+        </div>
+      </div>
+
+      <div class="hud-cluster hud-top-center">
+        <div id="quest-tracker" class="panel quest-tracker">
+          <div class="quest-eyebrow"><span>Active quest</span><span id="quest-count"></span></div>
+          <div id="quest-title">A New Dawn</div>
+          <div id="quest-objective">Speak with Mayor Elowen in Emberfall.</div>
+          <div class="quest-footer"><span id="quest-distance">—</span><span id="quest-hint">Follow the gold diamond</span></div>
+        </div>
+        <div id="boss-bar" class="boss-bar" hidden>
+          <div class="boss-label"><span id="boss-name">The Clockwork Dragon</span><span id="boss-hp-text"></span></div>
+          <div class="boss-track"><div id="boss-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="hud-cluster hud-top-right">
+        <div class="panel minimap-panel">
+          <div class="minimap-head"><span>Emberfall Valley</span><span id="room-badge">Solo</span></div>
+          <div class="minimap-shell"><canvas id="minimap-canvas" width="240" height="180"></canvas><div class="minimap-ring"></div></div>
+          <div class="minimap-foot"><span id="world-clock">08:20</span><span id="zone-name">Emberfall</span></div>
+        </div>
+        <div class="hud-buttons">
+          <button id="btn-map" class="mini-btn" title="World map (M)">Map <kbd>M</kbd></button>
+          <button id="btn-skills2" class="mini-btn" title="Skills (K)">Skills <kbd>K</kbd></button>
+          <button id="btn-craft2" class="mini-btn" title="Crafting (C)">Craft <kbd>C</kbd></button>
+          <button id="btn-pets2" class="mini-btn" title="Pets (P)">Pets <kbd>P</kbd></button>
+          <button id="btn-sound" class="mini-btn" title="Toggle sound">Sound</button>
+          <button id="btn-pause" class="mini-btn" title="Menu (Esc)">Menu</button>
+        </div>
+      </div>
+
+      <div id="interaction-prompt" class="interaction-prompt" hidden>
+        <kbd>E</kbd><span id="interaction-text">Talk</span>
+      </div>
+
+      <div class="hud-cluster hud-bottom">
+        <div class="meters">
+          <div class="meter-row"><span>XP</span><div class="meter xp"><div id="xp-fill"></div></div><b id="level-label">Lv 1</b></div>
+          <div class="meter-row"><span>Vigor</span><div class="meter stamina"><div id="stamina-fill"></div></div></div>
+        </div>
+        <div id="hotbar" class="hotbar">
+          <button class="slot attack" data-action="attack" title="Basic attack (Left click / Space)">
+            <span class="slot-key">LMB</span><span class="slot-glyph">ATK</span><span class="slot-name">Strike</span><span class="cooldown" id="cd-attack"></span>
+          </button>
+          <button class="slot ability" data-action="skill1" title="Skill one (Q)">
+            <span class="slot-key">Q</span><span class="slot-glyph" id="skill1-glyph">STAR</span><span class="slot-name" id="skill1-name">Starfall</span><span class="cooldown" id="cd-skill1"></span>
+          </button>
+          <button class="slot ability" data-action="skill2" title="Skill two (R)">
+            <span class="slot-key">R</span><span class="slot-glyph" id="skill2-glyph">VOLLEY</span><span class="slot-name" id="skill2-name">Volley</span><span class="cooldown" id="cd-skill2"></span>
+          </button>
+          <button class="slot ability ultimate" data-action="ultimate" title="Ultimate (F)">
+            <span class="slot-key">F</span><span class="slot-glyph" id="skill3-glyph">MOON</span><span class="slot-name" id="skill3-name">Moonstep</span><span class="cooldown" id="cd-skill3"></span>
+          </button>
+          <button class="slot pet" data-action="petskill" title="Pet skill (G)">
+            <span class="slot-key">G</span><span class="slot-glyph">PET</span><span class="slot-name" id="petskill-name">Cinder</span><span class="cooldown" id="cd-pet"></span>
+          </button>
+          <button class="slot mount" data-action="mount" title="Mount / dismount (V)">
+            <span class="slot-key">V</span><span class="slot-glyph">RIDE</span><span class="slot-name" id="mount-name">Skateboard</span><span class="cooldown"></span>
+          </button>
+          <button class="slot potion" data-action="potion" title="Drink tonic (H)">
+            <span class="slot-key">H</span><span class="slot-glyph">HEAL</span><span class="slot-name">Tonic</span><span class="cooldown"></span>
+          </button>
+        </div>
+        <div id="hint" class="hint">WASD move &nbsp;·&nbsp; Click strike &nbsp;·&nbsp; Q / R / F skills &nbsp;·&nbsp; E interact &nbsp;·&nbsp; V mount &nbsp;·&nbsp; G pet &nbsp;·&nbsp; Tab switch hero</div>
+      </div>
+
+      <div id="chat-log" class="chat-log"></div>
+      <form id="chat-form" class="chat-form" hidden><input id="chat-input" maxlength="120" placeholder="Say something to your party…" autocomplete="off"><span>Enter to send · Esc to close</span></form>
+
+      <div id="mobile-controls" class="mobile-controls">
+        <div id="joystick" class="joystick"><div id="stick" class="stick"></div></div>
+        <div class="mobile-actions">
+          <button id="mob-attack" class="mob-btn attack">ATK</button>
+          <button id="mob-ability" class="mob-btn ability">Q</button>
+          <button id="mob-interact" class="mob-btn interact">E</button>
+          <button id="mob-pet" class="mob-btn pet">G</button>
+          <button id="mob-mount" class="mob-btn mount">V</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="menu" class="menu-screen">
+      <canvas id="menu-canvas" aria-hidden="true"></canvas>
+      <div class="menu-vignette"></div>
+      <div class="menu-content">
+        <header class="brand">
+          <div class="eyebrow"><span class="rule"></span>A medieval open-world co-op RPG<span class="rule"></span></div>
+          <h1><span class="aurora">Aurora</span><span class="boris">Boris</span><span class="alice">Alice</span></h1>
+          <p class="tagline">Steel, sorcery, and sneakers.</p>
+          <p class="subtag">Three unlikely heroes. One valley full of clockwork trouble.</p>
+        </header>
+
+        <div id="hero-select" class="hero-select" role="radiogroup" aria-label="Choose your hero">
+          <button class="hero-card selected" data-hero="aurora" role="radio" aria-checked="true">
+            <canvas class="portrait" width="132" height="168"></canvas>
+            <span class="hero-role">STAR ARCHER</span>
+            <span class="hero-name">Aurora Vale</span>
+            <span class="hero-line">Moonlit arrows. Immaculate hoodie.</span>
+            <span class="hero-stats"><i>RANGE</i><i>MOBILITY</i><i>MAGIC</i></span>
+          </button>
+          <button class="hero-card" data-hero="boris" role="radio" aria-checked="false">
+            <canvas class="portrait" width="132" height="168"></canvas>
+            <span class="hero-role">IRON VANGUARD</span>
+            <span class="hero-name">Boris Stone</span>
+            <span class="hero-line">A wall of muscle with a hammer.</span>
+            <span class="hero-stats"><i>MELEE</i><i>DEFENSE</i><i>THUNDER</i></span>
+          </button>
+          <button class="hero-card" data-hero="alice" role="radio" aria-checked="false">
+            <canvas class="portrait" width="132" height="168"></canvas>
+            <span class="hero-role">GEARBLADE</span>
+            <span class="hero-name">Alice Quill</span>
+            <span class="hero-line">Twin daggers. Zero patience.</span>
+            <span class="hero-stats"><i>SPEED</i><i>CRIT</i><i>DASH</i></span>
+          </button>
+        </div>
+
+        <div class="menu-actions">
+          <button id="btn-continue" class="btn btn-continue" hidden>Continue <small id="continue-detail"></small></button>
+          <button id="btn-solo" class="btn btn-primary">Enter Emberfall <span>→</span></button>
+          <button id="btn-coop" class="btn">Co-op party</button>
+          <button id="btn-help" class="btn btn-ghost">How to play</button>
+        </div>
+
+        <div class="menu-meta">
+          <span>Explore · Quest · Fight · Ride</span>
+          <span class="dot"></span>
+          <span>Same-browser co-op up to 3 heroes</span>
+        </div>
+      </div>
+      <div id="menu-loading">
+        <span id="menu-load-status">Summoning the valley…</span>
+        <div class="track"><i id="menu-load-bar"></i></div>
+      </div>
+      <div id="menu-error" hidden></div>
+      <div class="menu-corner">OMGithub build <span>v1.0</span></div>
+    </section>
+
+    <div id="dialog-overlay" class="overlay" hidden>
+      <div class="dialog-card">
+        <div class="dialog-portrait" id="dialog-portrait">M</div>
+        <div class="dialog-body">
+          <div class="dialog-head"><span id="dialog-title">Mayor Elowen</span><small id="dialog-role">Keeper of Emberfall</small></div>
+          <p id="dialog-text"></p>
+          <div id="dialog-options" class="dialog-options"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="shop-overlay" class="overlay" hidden>
+      <div class="panel-card shop-card">
+        <div class="panel-head"><div><small>ZIPPY'S THREADS</small><h2>Tomorrow's wardrobe</h2></div><button class="close-btn" data-close="shop">Close</button></div>
+        <p class="shop-blurb">"Medieval problems. Modern solutions. All sales final."</p>
+        <div id="shop-list" class="shop-list"></div>
+      </div>
+    </div>
+
+    <div id="inventory-overlay" class="overlay" hidden>
+      <div class="panel-card inventory-card">
+        <div class="panel-head"><div><small>ADVENTURER'S PACK</small><h2>Gear & mounts</h2></div><button class="close-btn" data-close="inventory">Close</button></div>
+        <div class="inventory-grid">
+          <section><h3>Equipment</h3><div id="equipped-list" class="item-list"></div></section>
+          <section><h3>Backpack</h3><div id="owned-list" class="bag-grid"></div></section>
+          <section><h3>Journey</h3><div id="journey-stats" class="journey-stats"></div></section>
+        </div>
+      </div>
+    </div>
+
+    <div id="map-overlay" class="overlay" hidden>
+      <div class="panel-card map-card">
+        <div class="panel-head"><div><small>EMBERFALL VALLEY</small><h2>World map</h2></div><button class="close-btn" data-close="map">Close</button></div>
+        <div class="map-wrap"><canvas id="map-canvas" width="960" height="720"></canvas></div>
+        <div class="map-legend"><span><i class="legend-you"></i>You</span><span><i class="legend-quest"></i>Quest</span><span><i class="legend-town"></i>Town</span><span><i class="legend-boss"></i>Danger</span></div>
+      </div>
+    </div>
+
+    <div id="coop-overlay" class="overlay" hidden>
+      <div class="panel-card coop-card">
+        <div class="panel-head"><div><small>SAME-BROWSER CO-OP</small><h2>Gather your party</h2></div><button class="close-btn" data-close="coop">Close</button></div>
+        <div class="coop-tabs">
+          <button class="coop-tab active" data-tab="host">Host a room</button>
+          <button class="coop-tab" data-tab="join">Join a room</button>
+        </div>
+        <div id="coop-host" class="coop-pane">
+          <p>Open a second tab on this page, then join with the room code. Each player picks a different hero. The host's tab runs the shared world.</p>
+          <div class="room-code-box"><small>ROOM CODE</small><strong id="host-room-code">----</strong><button id="btn-copy-link" class="btn btn-small">Copy invite</button></div>
+          <label class="name-field">Your name<input id="host-name" maxlength="18" placeholder="Host"></label>
+          <button id="btn-host-start" class="btn btn-primary">Open room <span>→</span></button>
+        </div>
+        <div id="coop-join" class="coop-pane" hidden>
+          <p>Enter the four-letter room code from the host's screen. Use the same browser profile and a second tab.</p>
+          <label class="name-field">Room code<input id="join-room" maxlength="4" placeholder="ABCD" autocapitalize="characters"></label>
+          <label class="name-field">Your name<input id="join-name" maxlength="18" placeholder="Adventurer"></label>
+          <label class="name-field">Preferred hero
+            <select id="join-hero"><option value="aurora">Aurora</option><option value="boris">Boris</option><option value="alice">Alice</option></select>
+          </label>
+          <button id="btn-join-start" class="btn btn-primary">Join party <span>→</span></button>
+        </div>
+        <div class="coop-note">No account, no server: co-op syncs across tabs of this browser with BroadcastChannel.</div>
+      </div>
+    </div>
+
+    <div id="help-overlay" class="overlay" hidden>
+      <div class="panel-card help-card">
+        <div class="panel-head"><div><small>FIELD MANUAL</small><h2>How to play</h2></div><button class="close-btn" data-close="help">Close</button></div>
+        <div class="help-grid">
+          <section><h3>Move & fight</h3><ul>
+            <li><kbd>WASD</kbd> move · drag right mouse to orbit</li>
+            <li><kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump</li>
+            <li>Left click basic attack</li>
+            <li><kbd>Q</kbd> <kbd>R</kbd> <kbd>F</kbd> hero skills</li>
+            <li><kbd>G</kbd> pet skill · <kbd>H</kbd> tonic</li>
+          </ul></section>
+          <section><h3>Explore & live</h3><ul>
+            <li><kbd>E</kbd> talk, shop, farm, fish</li>
+            <li><kbd>V</kbd> mount or dismount</li>
+            <li><kbd>Tab</kbd> switch hero (solo/host)</li>
+            <li><kbd>I</kbd> inventory · <kbd>K</kbd> skills</li>
+            <li><kbd>C</kbd> craft · <kbd>P</kbd> pets · <kbd>M</kbd> map</li>
+          </ul></section>
+          <section><h3>Co-op</h3><ul>
+            <li>Host opens a room code.</li>
+            <li>Guests join from another tab.</li>
+            <li>Up to three heroes, one each.</li>
+            <li>Host tab simulates the world.</li>
+            <li><kbd>T</kbd> party chat</li>
+          </ul></section>
+          <section><h3>Your quest</h3><ul>
+            <li>Meet Mayor Elowen in Emberfall.</li>
+            <li>Hunt, farm, fish and craft.</li>
+            <li>Visit Zippy for modern gear.</li>
+            <li>Level up and tame a second pet.</li>
+            <li>Break the Clockwork Dragon.</li>
+          </ul></section>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause-overlay" class="overlay" hidden>
+      <div class="panel-card pause-card">
+        <small>PAUSED</small>
+        <h2>Aurora Boris Alice</h2>
+        <p>Emberfall waits. The clockwork does not.</p>
+        <div class="pause-actions">
+          <button id="btn-resume" class="btn btn-primary">Resume</button>
+          <button id="btn-open-help" class="btn">How to play</button>
+          <button id="btn-save" class="btn">Save journey</button>
+          <button id="btn-quit" class="btn btn-ghost">Return to title</button>
+        </div>
+        <div id="pause-room" class="pause-room"></div>
+      </div>
+    </div>
+
+    <div id="skills-overlay" class="overlay" hidden>
+      <div class="panel-card skills-card">
+        <div class="panel-head"><div><small>HERO DISCIPLINE</small><h2>Skills & passives</h2></div><button class="close-btn" data-close="skills">Close</button></div>
+        <div class="skills-head"><span>Skill points <b id="skill-points">0</b></span><span id="skills-hero">Aurora Vale · Star Archer</span></div>
+        <div id="skills-grid" class="skills-grid"></div>
+      </div>
+    </div>
+
+    <div id="craft-overlay" class="overlay" hidden>
+      <div class="panel-card craft-card">
+        <div class="panel-head"><div><small>FIELD CRAFTING</small><h2>Make something useful</h2></div><button class="close-btn" data-close="craft">Close</button></div>
+        <div class="craft-head"><span>Materials</span><div id="craft-materials" class="material-row"></div></div>
+        <div id="craft-list" class="craft-list"></div>
+      </div>
+    </div>
+
+    <div id="pets-overlay" class="overlay" hidden>
+      <div class="panel-card pets-card">
+        <div class="panel-head"><div><small>COMPANIONS</small><h2>Your pets</h2></div><button class="close-btn" data-close="pets">Close</button></div>
+        <div class="pets-layout">
+          <div id="pet-list" class="pet-list"></div>
+          <div id="pet-detail" class="pet-detail"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="fishing-overlay" class="overlay" hidden>
+      <div class="panel-card fishing-card">
+        <div class="panel-head"><div><small>MIRROR LAKE</small><h2>A nibble on the line</h2></div></div>
+        <p id="fishing-text">Wait for the bite…</p>
+        <div class="fishing-track"><div id="fishing-marker"></div><div id="fishing-target"></div></div>
+        <button id="btn-reel" class="btn btn-primary">Reel in!</button>
+      </div>
+    </div>
+
+    <div id="death-overlay" class="overlay death-overlay" hidden>
+      <div class="death-card">
+        <small>THE VALLEY CLAIMS YOU</small>
+        <h2>Down, but not out.</h2>
+        <p>Your party can still turn this around. Return to the last shrine with half your health.</p>
+        <button id="btn-respawn" class="btn btn-primary">Return to the shrine</button>
+      </div>
+    </div>
+
+    <div id="victory-overlay" class="overlay victory-overlay" hidden>
+      <div class="victory-card">
+        <small>THE CLOCKWORK CROWN</small>
+        <h2>The dragon falls.</h2>
+        <p>Emberfall is safe — for now. The valley is yours to explore, and Zippy is already designing a victory hoodie.</p>
+        <div id="victory-stats" class="victory-stats"></div>
+        <div class="victory-actions">
+          <button id="btn-victory-continue" class="btn btn-primary">Keep exploring</button>
+          <button id="btn-victory-title" class="btn btn-ghost">Title screen</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sync-overlay" class="overlay" hidden>
+      <div class="sync-card">
+        <div class="spinner"></div>
+        <h2 id="sync-title">Joining the party…</h2>
+        <p id="sync-text">Calling the host tab across the veil.</p>
+        <div class="sync-actions">
+          <button id="btn-sync-retry" class="btn">Retry</button>
+          <button id="btn-sync-cancel" class="btn btn-ghost">Back to title</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+  </main>
+
+</body>
+</html>
