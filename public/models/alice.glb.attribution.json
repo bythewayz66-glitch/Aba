@@ -1,0 +1,29 @@
+{
+  "uid": "04617a507cd04aec927836fefafa32ed",
+  "name": "3DRT - Fantasy Amazon",
+  "author": "3DRT.com",
+  "authorUrl": "https://sketchfab.com/3DRT.com",
+  "license": "CC Attribution",
+  "licenseUrl": null,
+  "modelUrl": "https://sketchfab.com/3d-models/none-04617a507cd04aec927836fefafa32ed",
+  "thumbnailUrl": "https://media.sketchfab.com/models/04617a507cd04aec927836fefafa32ed/thumbnails/39a8b995a182460abbbcdc1df60d4bd5/9c8860fe29f84d67aad5ec54d5b6d0f2.jpeg",
+  "glbBytes": 2899576,
+  "faceCount": 2442,
+  "vertexCount": 2571,
+  "textureCount": 1,
+  "textureMaxResolution": 1024,
+  "animationCount": 1,
+  "animations": [
+    {
+      "uid": "333402d73d2843f9938ea58fe0a85e75",
+      "name": "Take 001",
+      "url": "https://media.sketchfab.com/models/04617a507cd04aec927836fefafa32ed/d000b6ef538043a181d33a1e9577f471/animations/333402d73d2843f9938ea58fe0a85e75.bin.gz",
+      "size": 3475748,
+      "duration": 36.333,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2020-06-25T08:41:24.523203",
+      "updatedAt": "2020-06-25T08:41:24.523234"
+    }
+  ]
+}

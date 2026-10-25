@@ -1,0 +1,29 @@
+{
+  "uid": "d39a0dee0f054c21b6751f7821aa7a8e",
+  "name": "3DRT - Fantasy Warrior",
+  "author": "3DRT.com",
+  "authorUrl": "https://sketchfab.com/3DRT.com",
+  "license": "CC Attribution",
+  "licenseUrl": null,
+  "modelUrl": "https://sketchfab.com/3d-models/none-d39a0dee0f054c21b6751f7821aa7a8e",
+  "thumbnailUrl": "https://media.sketchfab.com/models/d39a0dee0f054c21b6751f7821aa7a8e/thumbnails/9d8ef60c3f1b4659ac2574f9ff53195e/7a084e4bfb884ffaa3797d172e396b5c.jpeg",
+  "glbBytes": 3426456,
+  "faceCount": 2504,
+  "vertexCount": 3055,
+  "textureCount": 1,
+  "textureMaxResolution": 1024,
+  "animationCount": 1,
+  "animations": [
+    {
+      "uid": "862f56578fa44798ac628d344906aafe",
+      "name": "Take 001",
+      "url": "https://media.sketchfab.com/models/d39a0dee0f054c21b6751f7821aa7a8e/bc3478e65e6b429ab8022c65eb5ad3c6/animations/862f56578fa44798ac628d344906aafe.bin.gz",
+      "size": 4573040,
+      "duration": 33.367,
+      "isLoop": false,
+      "isEnabled": true,
+      "createdAt": "2020-06-28T07:56:29.320982",
+      "updatedAt": "2020-06-28T07:56:29.321008"
+    }
+  ]
+}

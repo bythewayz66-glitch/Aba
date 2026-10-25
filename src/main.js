@@ -1,14 +1,9 @@
 import * as THREE from 'three';
-import { loadAssets, makeSoldier, playState, updateMixers } from './assets.js';
+import { loadAssets, makeHero, playState, updateMixers } from './assets.js';
 import { Game } from './game.js';
 import { HEROES, HERO_KEYS, SAVE_KEY } from './data.js';
 
 const $ = (id) => document.getElementById(id);
-const HERO_TINT = {
-  aurora: { body: '#b9c8e6', accent: '#8ef2e7', glow: 2.2 },
-  boris: { body: '#756d61', accent: '#f0b55e', glow: 1.4 },
-  alice: { body: '#4c5965', accent: '#f08fb5', glow: 2.4 }
-};
 const HERO_CAMERA = {
   aurora: { x: 2.0, y: 1.35, z: 0 },
   boris: { x: 4.2, y: 1.35, z: 0 },
@@ -25,6 +20,7 @@ let menuHeroes = {};
 let menuClock = null;
 let menuFrame = 0;
 let menuAlive = true;
+const portraitCanvases = {};
 
 function roomCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -78,20 +74,64 @@ function drawPortrait(canvas, key) {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(4, 11, 16, 0.42)';
-  ctx.fillRect(0, h * 0.62, w, h * 0.38);
-  ctx.fillStyle = '#f2f8fb';
-  ctx.font = '600 15px "Trebuchet MS", sans-serif';
-  ctx.fillText(def.first.toUpperCase(), 12, h - 32);
-  ctx.fillStyle = def.accent;
-  ctx.font = '500 9px "Trebuchet MS", sans-serif';
-  ctx.fillText(def.role.toUpperCase(), 12, h - 16);
+  const portrait = portraitCanvases[key];
+  if (portrait) ctx.drawImage(portrait, 0, 0, w, h);
+  const shade = ctx.createLinearGradient(0, h * 0.48, 0, h);
+  shade.addColorStop(0, 'rgba(4, 11, 16, 0)');
+  shade.addColorStop(1, 'rgba(4, 11, 16, 0.9)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, h * 0.48, w, h * 0.52);
   const ring = ctx.createLinearGradient(0, 0, w, 0);
   ring.addColorStop(0, def.accent);
   ring.addColorStop(1, 'transparent');
   ctx.strokeStyle = ring;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
+}
+
+function renderHeroPortrait(key) {
+  let renderer = null;
+  try {
+    const w = 132, h = 168;
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(w, h, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.35;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight('#fff1d8', '#16222a', 2.4));
+    const keyLight = new THREE.DirectionalLight('#ffe5bd', 4.2);
+    keyLight.position.set(-2.4, 4.5, 5);
+    scene.add(keyLight);
+    const rim = new THREE.PointLight('#6fe7dd', 12, 12);
+    rim.position.set(2.2, 2.6, -1.5);
+    scene.add(rim);
+    const fill = new THREE.PointLight('#f2a8c6', 6, 10);
+    fill.position.set(-2.4, 1.7, 2.4);
+    scene.add(fill);
+    const model = makeHero(key);
+    scene.add(model);
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model);
+    const height = Math.max(0.2, box.max.y - box.min.y);
+    const focusY = box.min.y + height * 0.82;
+    const camera = new THREE.PerspectiveCamera(30, w / h, 0.05, 30);
+    camera.position.set(0, focusY, height * 1.55);
+    camera.lookAt(0, focusY, 0);
+    model.userData.mixer?.update(0.85);
+    model.updateMatrixWorld(true);
+    renderer.render(scene, camera);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    out.getContext('2d').drawImage(renderer.domElement, 0, 0);
+    return out;
+  } catch (err) {
+    console.warn('Portrait render failed', key, err);
+    return null;
+  } finally {
+    renderer?.dispose();
+  }
 }
 
 function setupMenu() {
@@ -162,7 +202,7 @@ function setupMenu() {
   const accentMat = new THREE.MeshStandardMaterial({ color: '#d8b26a', metalness: 0.9, roughness: 0.25, emissive: '#8f6326', emissiveIntensity: 0.4 });
   HERO_KEYS.forEach((k, i) => {
     const root = new THREE.Group();
-    const model = makeSoldier(HERO_TINT[k]);
+    const model = makeHero(k);
     model.scale.setScalar(1.15);
     root.add(model);
     root.position.set(2.0 + i * 2.2, 0, 0);
@@ -204,6 +244,7 @@ function resizeMenu() {
   const w = innerWidth, h = innerHeight;
   menuRenderer.setSize(w, h, false);
   menuCamera.aspect = w / h;
+  menuCamera.position.z = w / h < 0.95 ? 18 : 14.5;
   menuCamera.updateProjectionMatrix();
 }
 
@@ -214,10 +255,12 @@ function menuLoop() {
   const t = menuClock.elapsedTime;
   if (menuCamera) {
     const target = menuCamera.userData.target;
+    const narrow = innerWidth / innerHeight < 0.95;
     const shift = (selected === 'aurora' ? -1 : selected === 'alice' ? 1 : 0) * 0.18;
-    menuCamera.position.x += (1 + shift - menuCamera.position.x) * 0.04;
+    const baseX = narrow ? 3.2 : 1;
+    menuCamera.position.x += (baseX + shift - menuCamera.position.x) * 0.04;
     menuCamera.position.y = 2.15 + Math.sin(t * 0.35) * 0.04;
-    menuCamera.lookAt(target.x * 0.3, target.y, target.z);
+    menuCamera.lookAt(narrow ? 4.2 : target.x * 0.3, target.y, target.z);
   }
   for (const k of HERO_KEYS) {
     const h = menuHeroes[k];
@@ -355,6 +398,7 @@ async function boot() {
     });
     if (status) status.textContent = 'Lighting the lanterns…';
     setupMenu();
+    HERO_KEYS.forEach((k) => { portraitCanvases[k] = renderHeroPortrait(k); });
     HERO_KEYS.forEach((k) => {
       const canvas = document.querySelector(`.hero-card[data-hero="${k}"] .portrait`);
       if (canvas) drawPortrait(canvas, k);

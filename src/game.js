@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { World, WATER_LEVEL } from './world.js';
-import { makeSoldier, makeFox, makeHorse, makeKnight, makeMount, playState, updateMixers } from './assets.js';
+import { makeHero, makeSoldier, makeFox, makeHorse, makeKnight, makeMount, playState, updateMixers } from './assets.js';
 import { AudioEngine } from './audio.js';
 import { clamp, damp, seedFromString } from './util.js';
 import {
@@ -61,6 +61,14 @@ export class Game {
     this.createHeroes();
     this.createPet();
     this.spawnEnemies();
+    const start = this.localHero;
+    this.camTarget.set(start.x, start.y + 1.45, start.z);
+    this.camera.position.set(
+      start.x + Math.sin(this.camYaw) * Math.cos(this.camPitch) * this.camDist,
+      start.y + 1.45 + Math.sin(this.camPitch) * this.camDist + 1.6,
+      start.z + Math.cos(this.camYaw) * Math.cos(this.camPitch) * this.camDist
+    );
+    this.camera.lookAt(start.x, start.y + 1.75, start.z);
     this.bind();
     this.resize();
     this.setupNet();
@@ -126,16 +134,17 @@ export class Game {
   }
 
   replaceNpcs() {
-    for (const npc of this.world.npcs) {
+    const villagerKeys = ['aurora', 'alice', 'boris'];
+    this.world.npcs.forEach((npc, i) => {
       const mesh = npc.mesh;
       mesh.clear();
-      const model = makeSoldier({ body: npc.color, accent: '#ffe6a1', glow: 0.7, metalness: 0.25, roughness: 0.7 });
+      const model = makeHero(villagerKeys[i % villagerKeys.length]);
       model.scale.setScalar(0.92);
       mesh.add(model);
       const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.26), new THREE.MeshBasicMaterial({ color: '#ffd66e' }));
-      marker.position.y = 3.05; marker.userData.marker = true; mesh.add(marker);
+      marker.position.y = 2.9; marker.userData.marker = true; mesh.add(marker);
       mesh.userData.model = model; mesh.userData.marker = marker;
-    }
+    });
   }
 
   setupLights() {
@@ -192,7 +201,7 @@ export class Game {
     HERO_KEYS.forEach((key, i) => {
       const def = HEROES[key];
       const root = new THREE.Group();
-      const model = makeSoldier({ body: def.tint, accent: def.accent, glow: 1.6, metalness: 0.5, roughness: 0.42 });
+      const model = makeHero(key);
       root.add(model);
       const st = this.stats(key);
       const pos = (this.savedPos && key === this.heroKey) ? this.savedPos : spawn[i];
@@ -512,7 +521,7 @@ export class Game {
       this.touch.x = x; this.touch.y = y;
       stick.style.transform = `translate(${x * 26}px,${y * 26}px)`;
     };
-    joy?.addEventListener('pointerdown', (e) => { active = true; joy.setPointerCapture(e.pointerId); move(e); });
+    joy?.addEventListener('pointerdown', (e) => { active = true; try { joy.setPointerCapture(e.pointerId); } catch {} move(e); });
     joy?.addEventListener('pointermove', move);
     const end = () => { active = false; this.touch.x = this.touch.y = 0; if (stick) stick.style.transform = ''; };
     joy?.addEventListener('pointerup', end); joy?.addEventListener('pointercancel', end);
@@ -534,7 +543,7 @@ export class Game {
   loop(now) {
     if (!this.running) return;
     requestAnimationFrame((t) => this.loop(t));
-    const dt = Math.min(0.05, (now - this.last) / 1000 || 0.016);
+    const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000) || 0.016);
     this.last = now;
     this.update(dt);
     this.composer.render();
@@ -1201,7 +1210,7 @@ export class Game {
       const marker = npc.mesh?.userData?.marker;
       if (marker) {
         marker.visible = target && target.target === npc.id;
-        marker.rotation.y += 0.02; marker.position.y = 3.05 + Math.sin(this.time * 2) * 0.08;
+        marker.rotation.y += 0.02; marker.position.y = 2.9 + Math.sin(this.time * 2) * 0.08;
       }
     }
   }
@@ -1262,14 +1271,24 @@ export class Game {
     $('zone-name').textContent = zone;
     const st = this.stats();
     const skills = h.def.skills;
+    const skillKeys = ['Q', 'R', 'F'];
     for (let i = 0; i < 3; i++) {
+      const rank = this.skillRanks[h.key]?.[skills[i].id] || 1;
+      const label = `${skills[i].name}${rank > 1 ? ' ' + rank : ''}`;
       $(`skill${i + 1}-glyph`).textContent = h.def.skillGlyphs[i];
-      $(`skill${i + 1}-name`).textContent = `${skills[i].name}${(this.skillRanks[h.key]?.[skills[i].id] || 1) > 1 ? ' ' + this.skillRanks[h.key][skills[i].id] : ''}`;
+      $(`skill${i + 1}-name`).textContent = label;
+      const btn = document.querySelector(`[data-action="${i === 2 ? 'ultimate' : `skill${i + 1}`}"]`);
+      if (btn) { btn.title = `${label} (${skillKeys[i]})`; btn.setAttribute('aria-label', label); }
       const cd = h.cooldowns[skills[i].id] || 0;
       const el = $(`cd-skill${i + 1}`); if (el) el.style.height = `${clamp(cd / skills[i].cd, 0, 1) * 100}%`;
     }
-    $('petskill-name').textContent = petDef?.skill.name || 'Pet skill';
+    const petSkillName = petDef?.skill.name || 'Pet skill';
+    $('petskill-name').textContent = petSkillName;
+    const petBtn = document.querySelector('[data-action="petskill"]');
+    if (petBtn) { petBtn.title = `${petSkillName} (G)`; petBtn.setAttribute('aria-label', petSkillName); }
     $('mount-name').textContent = MOUNTS[this.mount].name;
+    const mountBtn = document.querySelector('[data-action="mount"]');
+    if (mountBtn) { mountBtn.title = `${MOUNTS[this.mount].name} (V)`; mountBtn.setAttribute('aria-label', MOUNTS[this.mount].name); }
     $('cd-pet').style.height = `${clamp(this.petCd / (PET_DEF_CD[this.activePet] || 12), 0, 1) * 100}%`;
     $('cd-attack').style.height = `${clamp((h.cooldowns.basic || 0) / h.def.basicCd, 0, 1) * 100}%`;
     if (!this.victory) $('boss-bar').hidden = true;

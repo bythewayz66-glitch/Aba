@@ -5,6 +5,20 @@ import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 const loader = new GLTFLoader();
 export const assets = {};
 
+const HERO_IDLE_WINDOW = {
+  alice: [21.5, 23.4],
+  boris: [30.1, 32.3]
+};
+const HERO_FACING = {
+  alice: Math.PI,
+  aurora: 0,
+  boris: Math.PI
+};
+const HERO_ROOT_BONE = {
+  alice: 'Bip01_07',
+  boris: 'Bip01_06'
+};
+
 function fitModel(root, targetHeight) {
   const box = new THREE.Box3().setFromObject(root);
   const size = new THREE.Vector3();
@@ -31,6 +45,9 @@ function fitModel(root, targetHeight) {
 
 export async function loadAssets(onProgress = () => {}) {
   const names = [
+    ['aurora', '/models/aurora.glb', 1.78],
+    ['boris', '/models/boris.glb', 2.08],
+    ['alice', '/models/alice.glb', 1.8],
     ['soldier', '/models/Soldier.glb', 1.9],
     ['fox', '/models/Fox.glb', 0.75],
     ['horse', '/models/Horse.glb', 2.2],
@@ -78,6 +95,7 @@ function tintModel(root, opts = {}) {
 
 export function makeSoldier(opts = {}) {
   const root = cloneSkeleton(assets.soldier.scene);
+  root.rotation.y = Math.PI;
   tintModel(root, opts);
   const mixer = new THREE.AnimationMixer(root);
   const actions = {};
@@ -88,6 +106,40 @@ export function makeSoldier(opts = {}) {
   if (actions.Idle) actions.Idle.play();
   root.userData = { mixer, actions, current: 'Idle' };
   return root;
+}
+
+function idleClipFor(key, clip) {
+  const win = HERO_IDLE_WINDOW[key];
+  if (!win) return clip;
+  const fps = 30;
+  const start = Math.max(0, Math.round(win[0] * fps));
+  const end = Math.min(Math.round(clip.duration * fps), Math.round(win[1] * fps));
+  const sliced = THREE.AnimationUtils.subclip(clip, `${key}-idle`, start, end, fps);
+  const root = HERO_ROOT_BONE[key];
+  if (root) sliced.tracks = sliced.tracks.filter((track) => !track.name.startsWith(`${root}.`));
+  return sliced;
+}
+
+export function makeHero(key) {
+  const data = assets[key];
+  if (!data) return new THREE.Group();
+  const wrapper = new THREE.Group();
+  const facing = new THREE.Group();
+  facing.rotation.y = HERO_FACING[key] || 0;
+  const body = cloneSkeleton(data.scene);
+  facing.add(body);
+  wrapper.add(facing);
+  const mixer = new THREE.AnimationMixer(body);
+  const actions = {};
+  if (data.clips.length) {
+    const clip = idleClipFor(key, data.clips[0]);
+    actions.Idle = mixer.clipAction(clip);
+    actions.Run = mixer.clipAction(clip.clone());
+    actions.Run.timeScale = 1.3;
+    actions.Idle.play();
+  }
+  wrapper.userData = { mixer, actions, current: data.clips.length ? 'Idle' : '', body, facing };
+  return wrapper;
 }
 
 export function makeFox(opts = {}) {

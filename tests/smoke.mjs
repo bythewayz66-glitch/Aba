@@ -35,6 +35,8 @@ for (const id of [
   'pets-overlay', 'map-overlay', 'fishing-overlay', 'coop-overlay', 'help-overlay',
   'pause-overlay', 'dialog-overlay', 'shop-overlay', 'victory-overlay', 'toast-stack'
 ]) ok(html.includes(`id="${id}"`), `index contains #${id}`);
+ok((html.match(/class="slot-icon"/g) || []).length === 7, 'hotbar uses seven icon slots');
+ok(!/>ATK</.test(html) && !/>STAR</.test(html), 'hotbar no longer shows word glyphs');
 
 const game = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
 for (const feature of [
@@ -42,7 +44,7 @@ for (const feature of [
   'BroadcastChannel', 'renderInventory', 'renderSkills', 'renderPets', 'startFishing'
 ]) ok(game.includes(feature), `game implements ${feature}`);
 
-for (const file of ['Soldier.glb', 'Fox.glb', 'Horse.glb', 'Knight.glb']) {
+for (const file of ['aurora.glb', 'alice.glb', 'boris.glb', 'Soldier.glb', 'Fox.glb', 'Horse.glb', 'Knight.glb']) {
   const path = new URL(`../public/models/${file}`, import.meta.url);
   ok(statSync(path).size > 1000, `${file} asset is present`);
 }
