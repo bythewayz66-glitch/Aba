@@ -29,6 +29,9 @@ export class Game {
     this.keys = {};
     this.touch = { x: 0, y: 0 };
     this.touchSmooth = { x: 0, z: 0 };
+    this.joyPointerId = null;
+    this.joyOrigin = { x: 0, y: 0 };
+    this.joyRadius = 54;
     this.camYaw = 0;
     this.camPitch = 0.3;
     this.camDist = 10;
@@ -434,18 +437,25 @@ export class Game {
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('pointerdown', (e) => {
-      if (e.button === 2 || (e.pointerType === 'touch' && e.clientX < innerWidth * 0.55)) {
+      if (e.pointerType === 'touch' && e.clientX < innerWidth * 0.55 && !this.uiOpen) {
+        this.startJoystick(e);
+        return;
+      }
+      if (e.button === 2 || e.pointerType === 'touch') {
         this.dragging = true; this.dx = e.clientX; this.dy = e.clientY;
-        this.canvas.setPointerCapture(e.pointerId);
+        try { this.canvas.setPointerCapture(e.pointerId); } catch {}
       } else if (e.button === 0) this.userAttack();
     });
     this.canvas.addEventListener('pointermove', (e) => {
+      if (this.joyPointerId === e.pointerId) { this.moveJoystick(e); return; }
       if (!this.dragging) return;
       this.camYaw -= (e.clientX - this.dx) * 0.005;
       this.camPitch = clamp(this.camPitch + (e.clientY - this.dy) * 0.0035, 0.05, 0.72);
       this.dx = e.clientX; this.dy = e.clientY;
     });
-    addEventListener('pointerup', () => { this.dragging = false; });
+    const release = (e) => { this.endJoystick(e); this.dragging = false; };
+    addEventListener('pointerup', release);
+    addEventListener('pointercancel', release);
     this.canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.camDist = clamp(this.camDist + Math.sign(e.deltaY) * 0.8, 5.5, 16); }, { passive: false });
     const click = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', (e) => { e.preventDefault(); fn(); }); };
     for (const id of ['btn-inventory', 'btn-inventory2']) click(id, () => this.toggle('inventory'));
@@ -506,29 +516,58 @@ export class Game {
   }
 
   bindMobile() {
-    const joy = $('joystick'), stick = $('stick'); let active = false;
-    const move = (e) => {
-      if (!active) return;
-      const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let x = (e.clientX - cx) / (r.width * 0.5), y = (e.clientY - cy) / (r.height * 0.5);
-      let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; l = 1; }
-      const dead = 0.14;
-      if (l < dead) { x = 0; y = 0; }
-      else {
-        const strength = Math.pow((l - dead) / (1 - dead), 1.65);
-        x = (x / l) * strength; y = (y / l) * strength;
-      }
-      this.touch.x = x; this.touch.y = y;
-      stick.style.transform = `translate(${x * 26}px,${y * 26}px)`;
-    };
-    joy?.addEventListener('pointerdown', (e) => { active = true; try { joy.setPointerCapture(e.pointerId); } catch {} move(e); });
-    joy?.addEventListener('pointermove', move);
-    const end = () => { active = false; this.touch.x = this.touch.y = 0; if (stick) stick.style.transform = ''; };
-    joy?.addEventListener('pointerup', end); joy?.addEventListener('pointercancel', end);
     const b = (id, fn) => { const el = $(id); if (el) el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); }); };
     b('mob-attack', () => this.userAttack()); b('mob-ability', () => this.useSkill(1));
     b('mob-interact', () => this.interact()); b('mob-pet', () => this.usePetSkill());
     b('mob-mount', () => this.toggleMount());
+  }
+
+  startJoystick(e) {
+    if (this.joyPointerId !== null) return;
+    const joy = $('joystick'), stick = $('stick');
+    if (!joy || !stick) return;
+    const half = 58;
+    const x = clamp(e.clientX, half, innerWidth - half);
+    const y = clamp(e.clientY, half, innerHeight - half);
+    this.joyPointerId = e.pointerId;
+    this.joyOrigin.x = x; this.joyOrigin.y = y;
+    joy.style.left = `${x}px`;
+    joy.style.top = `${y}px`;
+    joy.classList.add('active');
+    stick.style.transform = 'translate(0px, 0px)';
+    this.touch.x = 0; this.touch.y = 0;
+    try { this.canvas.setPointerCapture(e.pointerId); } catch {}
+    e.preventDefault();
+  }
+
+  moveJoystick(e) {
+    if (e.pointerId !== this.joyPointerId) return;
+    const radius = this.joyRadius;
+    let nx = (e.clientX - this.joyOrigin.x) / radius;
+    let ny = (e.clientY - this.joyOrigin.y) / radius;
+    let l = Math.hypot(nx, ny);
+    if (l > 1) { nx /= l; ny /= l; l = 1; }
+    const dead = 0.14;
+    let sx = 0, sy = 0;
+    if (l >= dead) {
+      const strength = Math.pow((l - dead) / (1 - dead), 1.55);
+      sx = (nx / l) * strength;
+      sy = (ny / l) * strength;
+    }
+    this.touch.x = sx;
+    this.touch.y = sy;
+    const stick = $('stick');
+    if (stick) stick.style.transform = `translate(${nx * 31}px, ${ny * 31}px)`;
+    e.preventDefault();
+  }
+
+  endJoystick(e) {
+    if (this.joyPointerId !== e.pointerId) return;
+    this.joyPointerId = null;
+    this.touch.x = 0; this.touch.y = 0;
+    $('joystick')?.classList.remove('active');
+    const stick = $('stick');
+    if (stick) stick.style.transform = '';
   }
 
   resize() {
