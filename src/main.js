@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { loadAssets, makeHero, playState, updateMixers } from './assets.js';
 import { Game } from './game.js';
 import { HEROES, HERO_KEYS, SAVE_KEY } from './data.js';
+import { configureRenderer, createStudioEnvironment } from './gfx.js';
 
 const $ = (id) => document.getElementById(id);
 const HERO_CAMERA = {
@@ -15,6 +16,7 @@ let game = null;
 let starting = false;
 let menuRenderer = null;
 let menuScene = null;
+let menuEnvironment = null;
 let menuCamera = null;
 let menuHeroes = {};
 let menuClock = null;
@@ -91,6 +93,7 @@ function drawPortrait(canvas, key) {
 
 function renderHeroPortrait(key) {
   let renderer = null;
+  let environment = null;
   try {
     const w = 132, h = 168;
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -100,6 +103,9 @@ function renderHeroPortrait(key) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.35;
     const scene = new THREE.Scene();
+    environment = createStudioEnvironment(renderer);
+    scene.environment = environment;
+    scene.environmentIntensity = 0.6;
     scene.add(new THREE.HemisphereLight('#fff1d8', '#16222a', 2.4));
     const keyLight = new THREE.DirectionalLight('#ffe5bd', 4.2);
     keyLight.position.set(-2.4, 4.5, 5);
@@ -130,6 +136,7 @@ function renderHeroPortrait(key) {
     console.warn('Portrait render failed', key, err);
     return null;
   } finally {
+    environment?.dispose();
     renderer?.dispose();
   }
 }
@@ -137,16 +144,15 @@ function renderHeroPortrait(key) {
 function setupMenu() {
   const canvas = $('menu-canvas');
   menuRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-  menuRenderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-  menuRenderer.outputColorSpace = THREE.SRGBColorSpace;
-  menuRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  configureRenderer(menuRenderer, { mobile: innerWidth < 860 });
   menuRenderer.toneMappingExposure = 1.2;
-  menuRenderer.shadowMap.enabled = true;
-  menuRenderer.shadowMap.type = THREE.PCFShadowMap;
 
   menuScene = new THREE.Scene();
   menuScene.background = new THREE.Color('#07131c');
   menuScene.fog = new THREE.FogExp2('#08141d', 0.035);
+  menuEnvironment = createStudioEnvironment(menuRenderer);
+  menuScene.environment = menuEnvironment;
+  menuScene.environmentIntensity = 0.8;
   menuCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 80);
   menuCamera.position.set(1, 2.15, 14.5);
   menuCamera.userData.target = new THREE.Vector3(2, 1.3, 0);
@@ -233,7 +239,8 @@ function setupMenu() {
   stone2.scale.set(0.38, 0.38, 0.38);
   menuScene.add(stone2);
 
-  menuClock = new THREE.Clock();
+  menuClock = new THREE.Timer();
+  menuClock.connect(document);
   resizeMenu();
   addEventListener('resize', resizeMenu);
   menuLoop();
@@ -251,8 +258,9 @@ function resizeMenu() {
 function menuLoop() {
   if (!menuAlive) return;
   menuFrame = requestAnimationFrame(menuLoop);
+  menuClock.update();
   const dt = Math.min(0.05, menuClock.getDelta());
-  const t = menuClock.elapsedTime;
+  const t = menuClock.getElapsed();
   if (menuCamera) {
     const target = menuCamera.userData.target;
     const narrow = innerWidth / innerHeight < 0.95;
@@ -277,6 +285,8 @@ function disposeMenu() {
   menuAlive = false;
   cancelAnimationFrame(menuFrame);
   removeEventListener('resize', resizeMenu);
+  menuEnvironment?.dispose();
+  menuEnvironment = null;
   menuRenderer?.dispose();
   menuRenderer = null;
 }

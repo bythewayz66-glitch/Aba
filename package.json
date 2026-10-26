@@ -8,7 +8,7 @@
     "dev": "vite --host 0.0.0.0 --port 3002",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3002",
-    "check": "node --check src/main.js && node --check src/game.js && node --check src/world.js && node --check src/assets.js && node --check src/data.js && node --check src/audio.js && node --check src/util.js",
+    "check": "node --check src/main.js && node --check src/game.js && node --check src/gfx.js && node --check src/world.js && node --check src/assets.js && node --check src/data.js && node --check src/audio.js && node --check src/util.js",
     "test": "node tests/smoke.mjs"
   },
   "dependencies": {

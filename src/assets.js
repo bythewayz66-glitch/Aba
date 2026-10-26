@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { polishModel } from './gfx.js';
 
 const loader = new GLTFLoader();
 export const assets = {};
@@ -40,6 +41,7 @@ function fitModel(root, targetHeight) {
       }
     }
   });
+  polishModel(root, { anisotropy: 8, envIntensity: 1.0 });
   return root;
 }
 

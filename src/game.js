@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { configureRenderer, createStudioEnvironment } from './gfx.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -29,9 +32,13 @@ export class Game {
     this.keys = {};
     this.touch = { x: 0, y: 0 };
     this.touchSmooth = { x: 0, z: 0 };
+    this.joystickPointerId = null;
+    this.joystickOrigin = null;
+    this.joystickRadius = 48;
     this.camYaw = 0;
     this.camPitch = 0.3;
     this.camDist = 10;
+    this.firstPerson = false;
     this.camTarget = new THREE.Vector3();
     this.dragging = false;
     this.projectiles = [];
@@ -112,11 +119,8 @@ export class Game {
   setupRenderer() {
     this.canvas = $('game-canvas');
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.6));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.quality = (innerWidth < 860 || matchMedia('(pointer: coarse)').matches) ? 'low' : 'high';
+    configureRenderer(this.renderer, { mobile: this.quality === 'low' });
     this.renderer.toneMappingExposure = 1.15;
     this.camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 320);
     $('menu').hidden = true; $('hud').hidden = false;
@@ -125,11 +129,27 @@ export class Game {
   setupScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#93c3cf');
-    this.scene.fog = new THREE.FogExp2('#a8cfd4', 0.006);
-    this.composer = new EffectComposer(this.renderer);
+    this.scene.fog = new THREE.FogExp2('#a8cfd4', 0.005);
+    this.environment = createStudioEnvironment(this.renderer);
+    this.scene.environment = this.environment;
+    this.scene.environmentIntensity = 0.72;
+    const target = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { samples: innerWidth < 860 ? 2 : 4 });
+    this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    if (this.quality === 'high') {
+      this.gtao = new GTAOPass(this.scene, this.camera, innerWidth, innerHeight);
+      this.gtao.blendIntensity = 0.9;
+      this.gtao.updateGtaoMaterial({ radius: 0.28, distanceExponent: 1.4, thickness: 0.8, scale: 1, samples: 16 });
+      this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 16 });
+      this.composer.addPass(this.gtao);
+    }
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.48, 0.6, 0.88);
     this.composer.addPass(this.bloom);
+    this.composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, saturation: { value: 1.07 }, contrast: { value: 1.035 }, vignette: { value: 0.3 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; uniform float saturation; uniform float contrast; uniform float vignette; varying vec2 vUv; void main(){ vec4 c=texture2D(tDiffuse,vUv); float l=dot(c.rgb,vec3(0.2126,0.7152,0.0722)); c.rgb=mix(vec3(l),c.rgb,saturation); c.rgb=(c.rgb-0.5)*contrast+0.5; float d=distance(vUv,vec2(0.5)); c.rgb*=1.0-vignette*smoothstep(0.22,0.86,d); gl_FragColor=c; }'
+    }));
     this.composer.addPass(new OutputPass());
   }
 
@@ -154,8 +174,10 @@ export class Game {
     this.sun.position.set(-34, 58, 30);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(this.sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 1, far: 150 });
+    Object.assign(this.sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, near: 1, far: 150 });
     this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.02;
+    this.sun.shadow.radius = 2;
     this.scene.add(this.sun);
     this.sun.target = new THREE.Object3D(); this.scene.add(this.sun.target);
     this.rim = new THREE.DirectionalLight('#6ca9d6', 0.55);
@@ -348,7 +370,7 @@ export class Game {
       h.x = clamp(msg.x, -145, 145); h.z = clamp(msg.z, -145, 145); h.y = this.world.heightAt(h.x, h.z);
       h.yaw = msg.yaw; h.moving = !!msg.moving; h.mounted = !!msg.mounted; h.hp = Math.min(msg.hp, msg.maxHp); h.maxHp = msg.maxHp;
       h.petType = msg.petType; h.root.position.set(h.x, h.y, h.z); h.root.rotation.y = h.yaw;
-      h.mount.visible = h.mounted;
+      h.mount.visible = h.mounted && !(h === this.localHero && this.firstPerson);
     } else if (msg.type === 'action') {
       const h = this.heroes[msg.heroKey]; if (!h || h.owner !== msg.from) return;
       if (msg.action === 'basic') this.basic(h, msg.tx, msg.tz, msg.power);
@@ -376,6 +398,7 @@ export class Game {
     const old = this.localHero; if (old) old.owner = 'ai';
     this.localHero = this.heroes[key]; this.localHero.owner = 'local'; this.heroKey = key;
     for (const k of HERO_KEYS) if (k !== key) this.heroes[k].owner = this.mode === 'guest' ? 'remote' : 'ai';
+    this.applyViewMode();
     this.createPet();
   }
 
@@ -428,24 +451,39 @@ export class Game {
       if (e.code === 'KeyC') this.toggle('craft');
       if (e.code === 'KeyP') this.toggle('pets');
       if (e.code === 'KeyM') this.toggle('map');
+      if (e.code === 'KeyX') this.toggleView();
       if (e.code === 'KeyT') { e.preventDefault(); this.openChat(); }
       if (e.code === 'Space' && !this.uiOpen) { e.preventDefault(); this.jump(); }
     });
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('pointerdown', (e) => {
-      if (e.button === 2 || (e.pointerType === 'touch' && e.clientX < innerWidth * 0.55)) {
+      if (e.pointerType === 'touch') {
+        if (e.clientX < innerWidth * 0.55 && !this.uiOpen) this.beginFloatingJoystick(e);
+        else {
+          this.dragging = true; this.dx = e.clientX; this.dy = e.clientY;
+          try { this.canvas.setPointerCapture(e.pointerId); } catch {}
+        }
+        return;
+      }
+      if (e.button === 2) {
         this.dragging = true; this.dx = e.clientX; this.dy = e.clientY;
-        this.canvas.setPointerCapture(e.pointerId);
+        try { this.canvas.setPointerCapture(e.pointerId); } catch {}
       } else if (e.button === 0) this.userAttack();
     });
     this.canvas.addEventListener('pointermove', (e) => {
+      if (this.joystickPointerId === e.pointerId) { this.moveFloatingJoystick(e); return; }
       if (!this.dragging) return;
       this.camYaw -= (e.clientX - this.dx) * 0.005;
-      this.camPitch = clamp(this.camPitch + (e.clientY - this.dy) * 0.0035, 0.05, 0.72);
+      this.camPitch = clamp(this.camPitch + (e.clientY - this.dy) * 0.0035, this.firstPerson ? -1.1 : 0.05, this.firstPerson ? 1.1 : 0.72);
       this.dx = e.clientX; this.dy = e.clientY;
     });
-    addEventListener('pointerup', () => { this.dragging = false; });
+    const releasePointer = (e) => {
+      if (this.joystickPointerId === e.pointerId) this.endFloatingJoystick();
+      this.dragging = false;
+    };
+    addEventListener('pointerup', releasePointer);
+    addEventListener('pointercancel', releasePointer);
     this.canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.camDist = clamp(this.camDist + Math.sign(e.deltaY) * 0.8, 5.5, 16); }, { passive: false });
     const click = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', (e) => { e.preventDefault(); fn(); }); };
     for (const id of ['btn-inventory', 'btn-inventory2']) click(id, () => this.toggle('inventory'));
@@ -453,6 +491,7 @@ export class Game {
     for (const id of ['btn-craft', 'btn-craft2']) click(id, () => this.toggle('craft'));
     for (const id of ['btn-pets', 'btn-pets2']) click(id, () => this.toggle('pets'));
     click('btn-map', () => this.toggle('map'));
+    click('btn-view', () => this.toggleView());
     click('btn-pause', () => this.toggle('pause'));
     click('btn-resume', () => this.close());
     click('btn-open-help', () => { this.close(); this.open('help'); });
@@ -505,30 +544,61 @@ export class Game {
     if (innerWidth < 860) $('mobile-controls').hidden = false;
   }
 
+  beginFloatingJoystick(e) {
+    const joy = $('joystick'), stick = $('stick');
+    if (!joy) return;
+    this.joystickPointerId = e.pointerId;
+    this.joystickOrigin = { x: e.clientX, y: e.clientY };
+    this.joystickRadius = Math.min(52, Math.max(42, innerWidth * 0.072));
+    const r = this.joystickRadius;
+    joy.classList.add('floating');
+    joy.style.left = `${e.clientX - r}px`;
+    joy.style.top = `${e.clientY - r}px`;
+    joy.style.bottom = 'auto';
+    joy.style.width = `${r * 2}px`;
+    joy.style.height = `${r * 2}px`;
+    if (stick) stick.style.transform = '';
+    this.touch.x = 0; this.touch.y = 0;
+    try { this.canvas.setPointerCapture(e.pointerId); } catch {}
+  }
+
+  moveFloatingJoystick(e) {
+    if (!this.joystickOrigin) return;
+    const r = this.joystickRadius;
+    let x = (e.clientX - this.joystickOrigin.x) / r;
+    let y = (e.clientY - this.joystickOrigin.y) / r;
+    let l = Math.hypot(x, y);
+    if (l > 1) { x /= l; y /= l; l = 1; }
+    const dead = 0.14;
+    if (l < dead) { x = 0; y = 0; }
+    else {
+      const strength = Math.pow((l - dead) / (1 - dead), 1.65);
+      x = (x / l) * strength; y = (y / l) * strength;
+    }
+    this.touch.x = x; this.touch.y = y;
+    const stick = $('stick');
+    if (stick) stick.style.transform = `translate(${x * 26}px,${y * 26}px)`;
+  }
+
+  endFloatingJoystick() {
+    this.joystickPointerId = null;
+    this.joystickOrigin = null;
+    this.touch.x = 0; this.touch.y = 0;
+    const joy = $('joystick'), stick = $('stick');
+    if (joy) {
+      joy.classList.remove('floating');
+      joy.style.left = ''; joy.style.top = ''; joy.style.bottom = '';
+      joy.style.width = ''; joy.style.height = '';
+    }
+    if (stick) stick.style.transform = '';
+  }
+
   bindMobile() {
-    const joy = $('joystick'), stick = $('stick'); let active = false;
-    const move = (e) => {
-      if (!active) return;
-      const r = joy.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      let x = (e.clientX - cx) / (r.width * 0.5), y = (e.clientY - cy) / (r.height * 0.5);
-      let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; l = 1; }
-      const dead = 0.14;
-      if (l < dead) { x = 0; y = 0; }
-      else {
-        const strength = Math.pow((l - dead) / (1 - dead), 1.65);
-        x = (x / l) * strength; y = (y / l) * strength;
-      }
-      this.touch.x = x; this.touch.y = y;
-      stick.style.transform = `translate(${x * 26}px,${y * 26}px)`;
-    };
-    joy?.addEventListener('pointerdown', (e) => { active = true; try { joy.setPointerCapture(e.pointerId); } catch {} move(e); });
-    joy?.addEventListener('pointermove', move);
-    const end = () => { active = false; this.touch.x = this.touch.y = 0; if (stick) stick.style.transform = ''; };
-    joy?.addEventListener('pointerup', end); joy?.addEventListener('pointercancel', end);
     const b = (id, fn) => { const el = $(id); if (el) el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); }); };
     b('mob-attack', () => this.userAttack()); b('mob-ability', () => this.useSkill(1));
     b('mob-interact', () => this.interact()); b('mob-pet', () => this.usePetSkill());
     b('mob-mount', () => this.toggleMount());
+    b('mob-view', () => this.toggleView());
   }
 
   resize() {
@@ -580,6 +650,8 @@ export class Game {
     this.skyMat.uniforms.top.value.set('#0b1835').lerp(new THREE.Color('#4fa8c8'), daylight);
     this.skyMat.uniforms.bottom.value.set('#24344f').lerp(new THREE.Color('#f4d7b1'), daylight);
     this.scene.fog.color.set('#24344f').lerp(new THREE.Color('#a8cfd4'), daylight);
+    this.scene.fog.density = 0.0042 + (1 - daylight) * 0.0024;
+    this.scene.environmentIntensity = 0.55 + daylight * 0.25;
     this.stars.material.opacity = Math.max(0, (1 - daylight) - 0.35) * 1.4;
     this.sky.position.copy(this.camera.position); this.stars.position.copy(this.camera.position);
     if (this.world.water) this.world.water.material.uniforms.uTime.value = this.time;
@@ -608,10 +680,11 @@ export class Game {
     const mx = (fx * -z + rx * x), mz = (fz * -z + rz * x);
     const moved = this.world.move(h, mx * speed * dt, mz * speed * dt, 0.55);
     h.moving = moved && len > 0.05;
-    if (h.moving) {
-      const target = Math.atan2(mx, mz); let d = target - h.yaw;
+    const usingJoystick = !!(this.touch.x || this.touch.y);
+    if (h.moving || this.firstPerson) {
+      const target = (usingJoystick || this.firstPerson) ? this.camYaw + Math.PI : Math.atan2(mx, mz); let d = target - h.yaw;
       while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-      h.yaw += d * Math.min(1, dt * 12);
+      h.yaw += d * Math.min(1, dt * (this.firstPerson ? 18 : 12));
     }
     h.y = this.world.heightAt(h.x, h.z);
     h.root.position.set(h.x, h.y, h.z); h.root.rotation.y = h.yaw;
@@ -619,7 +692,7 @@ export class Game {
     for (const k in h.cooldowns) h.cooldowns[k] = Math.max(0, h.cooldowns[k] - dt);
     playState(h.model, h.moving ? 'Run' : 'Idle', sprint ? 1.3 : 1);
     updateMixers(h.model, dt);
-    h.mount.visible = this.mounted;
+    h.mount.visible = this.mounted && !this.firstPerson;
     h.mount.rotation.y = Math.sin(this.time * 3) * 0.02;
     if (this.petMesh) {
       const targetX = h.x - Math.cos(h.yaw) * 1.7, targetZ = h.z + Math.sin(h.yaw) * 1.7;
@@ -637,6 +710,20 @@ export class Game {
   }
 
   updateCamera(dt) {
+    const h = this.localHero;
+    if (this.firstPerson && h) {
+      const eye = new THREE.Vector3(h.x, h.y + (this.mounted ? 2.35 : 1.62), h.z);
+      const forward = new THREE.Vector3(
+        -Math.sin(this.camYaw) * Math.cos(this.camPitch),
+        -Math.sin(this.camPitch),
+        -Math.cos(this.camYaw) * Math.cos(this.camPitch)
+      );
+      if (h.moving) eye.y += Math.sin(this.time * 10) * 0.018;
+      eye.addScaledVector(forward, 0.18);
+      this.camera.position.lerp(eye, 1 - Math.exp(-18 * dt));
+      this.camera.lookAt(this.camera.position.clone().add(forward));
+      return;
+    }
     const t = this.camTarget.lengthSq() ? this.camTarget : new THREE.Vector3(this.localHero.x, this.localHero.y + 1.4, this.localHero.z);
     const off = new THREE.Vector3(
       Math.sin(this.camYaw) * Math.cos(this.camPitch) * this.camDist,
@@ -654,6 +741,27 @@ export class Game {
     if (desired.y < clearance) desired.y = clearance;
     this.camera.position.lerp(desired, 1 - Math.exp(-8 * dt));
     this.camera.lookAt(t.x, t.y + 0.3, t.z);
+  }
+
+  toggleView() {
+    this.firstPerson = !this.firstPerson;
+    this.camPitch = clamp(this.camPitch, this.firstPerson ? -1.1 : 0.05, this.firstPerson ? 1.1 : 0.72);
+    this.applyViewMode();
+    this.toast(this.firstPerson ? 'First-person view.' : 'Third-person view.', 'info');
+    this.updateHud(true);
+  }
+
+  applyViewMode() {
+    for (const hero of Object.values(this.heroes)) {
+      const local = hero === this.localHero;
+      hero.model.visible = !local || !this.firstPerson;
+      hero.label.visible = !local || !this.firstPerson;
+      if (local) hero.mount.visible = this.mounted && !this.firstPerson;
+    }
+    const btn = $('btn-view');
+    if (btn) btn.innerHTML = `View <kbd>X</kbd>`;
+    const reticle = $('fpv-reticle');
+    if (reticle) reticle.hidden = !this.firstPerson;
   }
 
   cycleHero() {
@@ -700,7 +808,7 @@ export class Game {
         h.yaw += d * Math.min(1, dt * 8);
       }
       h.y = this.world.heightAt(h.x, h.z); h.root.position.set(h.x, h.y, h.z); h.root.rotation.y = h.yaw; h.root.visible = !h.dead;
-      h.mount.visible = h.mounted;
+      h.mount.visible = h.mounted && !(h === this.localHero && this.firstPerson);
       playState(h.model, h.moving ? 'Run' : 'Idle'); updateMixers(h.model, dt);
       if (h.petType) {
         let p = this.remotePets.get(k);

@@ -37,12 +37,19 @@ for (const id of [
 ]) ok(html.includes(`id="${id}"`), `index contains #${id}`);
 ok((html.match(/class="slot-icon"/g) || []).length === 7, 'hotbar uses seven icon slots');
 ok(!/>ATK</.test(html) && !/>STAR</.test(html), 'hotbar no longer shows word glyphs');
+for (const id of ['btn-view', 'mob-view', 'fpv-reticle']) ok(html.includes(`id="${id}"`), `index contains #${id}`);
 
 const game = readFileSync(new URL('../src/game.js', import.meta.url), 'utf8');
 for (const feature of [
   'save()', 'craft(', 'farm(', 'reel(', 'petSkill(', 'questProgress(', 'buy(', 'equip(',
-  'BroadcastChannel', 'renderInventory', 'renderSkills', 'renderPets', 'startFishing'
+  'BroadcastChannel', 'renderInventory', 'renderSkills', 'renderPets', 'startFishing',
+  'toggleView()', 'firstPerson', 'beginFloatingJoystick', 'moveFloatingJoystick', 'GTAOPass'
 ]) ok(game.includes(feature), `game implements ${feature}`);
+
+const gfx = readFileSync(new URL('../src/gfx.js', import.meta.url), 'utf8');
+for (const feature of ['configureRenderer', 'createStudioEnvironment', 'polishModel']) {
+  ok(gfx.includes(`export function ${feature}`), `gfx pipeline exports ${feature}`);
+}
 
 for (const file of ['aurora.glb', 'alice.glb', 'boris.glb', 'Soldier.glb', 'Fox.glb', 'Horse.glb', 'Knight.glb']) {
   const path = new URL(`../public/models/${file}`, import.meta.url);
